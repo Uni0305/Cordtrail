@@ -2,6 +2,7 @@
 
 A [JDA](https://github.com/discord-jda/JDA)-based logging bot that subscribes to events (messages, reactions, members, voice) in every Discord guild it joins and records them in ClickHouse.
 
+[![CI](https://github.com/Uni0305/Cordtrail/actions/workflows/ci.yml/badge.svg)](https://github.com/Uni0305/Cordtrail/actions/workflows/ci.yml)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
 ![JDK](https://img.shields.io/badge/JDK-25-orange)
 ![JDA](https://img.shields.io/badge/JDA-6.7-5865F2)
@@ -37,6 +38,17 @@ cp .env.example .env   # fill in DISCORD_TOKEN and CLICKHOUSE_PASSWORD
 docker compose up -d --build
 docker compose logs -f bot
 ```
+
+### Docker Compose with the prebuilt image
+
+Release images are published to `ghcr.io/uni0305/cordtrail` for `linux/amd64` and `linux/arm64`. The server only needs [`docker-compose.prod.yml`](docker-compose.prod.yml) and `.env`, with no source checkout:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+It uses the `latest` tag by default. To pin a release, set `CORDTRAIL_TAG=1.2.3` in `.env`.
 
 > [!WARNING]
 > `.env` contains the bot token and the database password. Do not commit it to the repository.
@@ -129,3 +141,15 @@ flowchart LR
 | `src/main/kotlin/.../listener` | Converts JDA events into `EventRecord`s |
 | `src/main/kotlin/.../storage` | Buffer, JSONEachRow encoder, ClickHouse client and schema initialization |
 | `src/main/kotlin/.../config` | Loads and validates environment variables |
+
+### CI and releases
+
+- [`ci.yml`](.github/workflows/ci.yml) runs tests, the Kover coverage report (uploaded as an artifact), `shadowJar`, and an amd64 Docker build on every pull request and every push to `master`.
+- [`release.yml`](.github/workflows/release.yml) runs on `v*` tags. It reruns CI, then builds multi-arch images and pushes them to GHCR as `<version>` and `latest`. Prerelease tags such as `v1.3.0-rc.1` also update `latest`.
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+Dependabot opens weekly update PRs for Gradle dependencies, GitHub Actions, and the Dockerfile base images.

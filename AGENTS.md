@@ -15,6 +15,7 @@ Cordtrail: a Kotlin/JDA Discord bot that records guild events (messages, reactio
 ./gradlew koverHtmlReport                        # coverage (CordtrailBot entry point is excluded)
 ./gradlew shadowJar                              # fat jar -> build/libs/Cordtrail-1.0-SNAPSHOT.jar (plain `jar` task is disabled)
 docker compose up -d --build                     # bot + ClickHouse, reads .env (copy from .env.example)
+docker compose -f docker-compose.prod.yml up -d  # same, but pulls the release image from GHCR instead of building
 ```
 
 Run locally: `DISCORD_TOKEN=... CLICKHOUSE_URL=http://localhost:8123 java -jar build/libs/Cordtrail-1.0-SNAPSHOT.jar`. Configuration is env-only; see the table in README.md and `config/BotConfig.kt`. Code style is `kotlin.code.style=official`. Dependency versions live in `gradle/libs.versions.toml`.
@@ -30,6 +31,12 @@ Data flow: Discord gateway → `listener/*` → `RecordConsumer` → `storage/Ev
 - **EventBuffer** (`storage/EventBuffer.kt`): the core reliability logic. Non-blocking `offer`; drops oldest when over capacity; single flusher thread; failed batches are requeued at the front with exponential backoff (1s→60s); after 5 consecutive failures it bisects the batch to isolate "poison" records and drops only those (only if some part succeeded — otherwise it's treated as an outage and everything is requeued). `close()` refuses to flush concurrently with a stuck flusher thread to preserve ordering. Read the KDoc before changing it.
 - **Sink/encoding**: `JsonEachRowEncoder` serializes each record independently (unserializable records are dropped individually via callback). `EventSink` is a `fun interface` so tests can substitute it.
 - **ClickHouse client** (`storage/ClickHouse.kt`): `client-v2` is synchronous, so `future.get(timeout)` doesn't enforce anything — the connect/socket timeouts set in `createClickHouseClient` are the only timeout. `schema.sql` is split on `;`, `--` comment lines are stripped, and `{db}` is substituted (database name validated as an identifier in `BotConfig`). Retries can create duplicate rows; dedupe by `event_id` at query time.
+
+## CI/CD
+
+- `.github/workflows/ci.yml`: runs on PRs and on pushes to `master`. Runs `test koverXmlReport koverHtmlReport shadowJar` on JDK 25 (Temurin), then an amd64 Docker build without pushing. It is also a reusable workflow (`workflow_call`, input `docker`).
+- `.github/workflows/release.yml`: runs on `v*` tags. Calls CI with `docker: false`, builds amd64/arm64 on native runners, pushes by digest, then merges the digests into `ghcr.io/uni0305/cordtrail:<version>` + `latest`. The Gradle `version` stays `1.0-SNAPSHOT`, and the image tag is the release identifier.
+- `docker-compose.prod.yml` duplicates the ClickHouse service from `docker-compose.yml`. Keep the two files in sync when changing it.
 
 ## Testing
 
