@@ -225,7 +225,7 @@ class EventBuffer(
         if (!closed.compareAndSet(false, true)) return
         val deadline = System.nanoTime() + timeout.toNanos()
         executor.shutdown()
-        if (!executor.awaitTermination(remainingMillis(deadline), TimeUnit.MILLISECONDS)) {
+        if (!executor.awaitTermination(remainingNanos(deadline), TimeUnit.NANOSECONDS)) {
             executor.shutdownNow()
             if (!executor.awaitTermination(STOP_FLUSHER_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
                 log.error("Flush thread is still blocked on the sink; skipping the final flush with {} unflushed events", size.get())
@@ -251,6 +251,10 @@ class EventBuffer(
 
         fun remainingMillis(deadline: Long): Long =
             TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).coerceAtLeast(0)
+
+        // Nanosecond precision: a millisecond wait would return up to 1 ms before the deadline, letting close() flush
+        // again after it has interrupted the flush thread.
+        fun remainingNanos(deadline: Long): Long = (deadline - System.nanoTime()).coerceAtLeast(0)
 
         fun <T> halves(list: List<T>): List<List<T>> {
             val mid = (list.size + 1) / 2
